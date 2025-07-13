@@ -1,0 +1,233 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intelligent-web-extractor"
+version = "0.1.0"
+description = "AI-Powered Intelligent Web Content Extraction Engine"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "AI Content Extractor Team", email = "team@intelligent-extractor.com"}
+]
+maintainers = [
+    {name = "AI Content Extractor Team", email = "team@intelligent-extractor.com"}
+]
+keywords = ["ai", "web-scraping", "content-extraction", "llm", "rag", "intelligent-crawling"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Markup :: HTML",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "playwright>=1.40.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=4.9.0",
+    "requests>=2.31.0",
+    "aiohttp>=3.8.0",
+    "asyncio-throttle>=1.0.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "openai>=1.0.0",
+    "anthropic>=0.7.0",
+    "sentence-transformers>=2.2.0",
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+    "faiss-cpu>=1.7.0",
+    "chromadb>=0.4.0",
+    "langchain>=0.1.0",
+    "langchain-openai>=0.1.0",
+    "langchain-anthropic>=0.1.0",
+    "tiktoken>=0.5.0",
+    "markdown>=3.5.0",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "tqdm>=4.65.0",
+    "tenacity>=8.2.0",
+    "httpx>=0.25.0",
+    "websockets>=11.0.0",
+    "uvloop>=0.19.0",
+    "orjson>=3.9.0",
+    "redis>=5.0.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.12.0",
+    "psutil>=5.9.0",
+    "memory-profiler>=0.61.0",
+    "prometheus-client>=0.17.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "pre-commit>=3.3.0",
+    "tox>=4.6.0",
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.2.0",
+    "mkdocstrings>=0.22.0",
+    "mkdocstrings-python>=1.3.0",
+]
+full = [
+    "intelligent-web-extractor[dev,docs]",
+]
+
+[project.urls]
+Homepage = "https://github.com/intelligent-extractor/intelligent-web-extractor"
+Documentation = "https://intelligent-web-extractor.readthedocs.io"
+Repository = "https://github.com/intelligent-extractor/intelligent-web-extractor"
+"Bug Tracker" = "https://github.com/intelligent-extractor/intelligent-web-extractor/issues"
+Changelog = "https://github.com/intelligent-extractor/intelligent-web-extractor/blob/main/CHANGELOG.md"
+
+[project.scripts]
+intelligent-extractor = "intelligent_web_extractor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"intelligent_web_extractor" = ["py.typed"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["intelligent_web_extractor"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "playwright.*",
+    "bs4.*",
+    "lxml.*",
+    "aiohttp.*",
+    "asyncio_throttle.*",
+    "dotenv.*",
+    "pydantic.*",
+    "openai.*",
+    "anthropic.*",
+    "sentence_transformers.*",
+    "numpy.*",
+    "sklearn.*",
+    "faiss.*",
+    "chromadb.*",
+    "langchain.*",
+    "tiktoken.*",
+    "markdown.*",
+    "click.*",
+    "rich.*",
+    "tqdm.*",
+    "tenacity.*",
+    "httpx.*",
+    "websockets.*",
+    "uvloop.*",
+    "orjson.*",
+    "redis.*",
+    "sqlalchemy.*",
+    "alembic.*",
+    "psutil.*",
+    "memory_profiler.*",
+    "prometheus_client.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["src/intelligent_web_extractor"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/migrations/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.tox]
+legacy_tox_ini = """
+[tox]
+envlist = py38,py39,py310,py311,py312
+isolated_build = True
+
+[testenv]
+deps =
+    pytest
+    pytest-asyncio
+    pytest-cov
+commands =
+    pytest {posargs:tests} --cov=intelligent_web_extractor --cov-report=term-missing
+""" 
