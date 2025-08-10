@@ -1,313 +1,263 @@
-# 🧠 Intelligent Web Extractor
+# Intelligent Web Extractor
 
-> **"Just tell it what you want in plain English, and it extracts it"** 🤯
+A production‑grade, prompt‑first crawler/scraper. You describe what you want in plain language; the system selects the right extraction strategy, navigates pages when needed, and returns data in your requested format.
 
-The world's most intuitive web scraper. No CSS selectors. No HTML parsing. Just natural language.
-
-[![PyPI version](https://badge.fury.io/py/intelligent-web-extractor.svg)](https://pypi.org/project/intelligent-web-extractor/)
-[![Downloads](https://pepy.tech/badge/intelligent-web-extractor)](https://pepy.tech/project/intelligent-web-extractor)
-[![Stars](https://img.shields.io/github/stars/username/intelligent-web-extractor)](https://github.com/username/intelligent-web-extractor)
-
-## 🔥 Why This Changes Everything
-
-```python
-# OLD WAY (100+ lines of code)
-soup = BeautifulSoup(html)
-title = soup.find('h1', class_='article-title').text
-content = soup.find('div', class_='content').get_text()
-# ... 95 more lines of fragile CSS selectors
-
-# NEW WAY (1 line of code)
-result = await extract("https://any-site.com", "Get article title and content")
-```
-
-## ✨ Features That Matter
-
-- **🎯 One-Line Extraction**: `extract(url, "what you want")`
-- **🤖 AI-Powered**: Understands context, not just structure
-- **📊 Smart Output**: Returns exactly the format you need
-- **⚡ Lightning Fast**: Async processing + intelligent caching
-- **🔧 Zero Setup**: Works out of the box
-
-## 🚀 Quick Start
-
-### Installation
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd intelligent-web-extractor
-
-# Install dependencies
-pip install -r requirements-windows.txt
-
-# Install Playwright browsers
-playwright install chromium
-```
-
-### Basic Usage
-
-```python
-from intelligent_extractor import extract
-
-# Simple extraction
-result = await extract(
-    "https://example.com",
-    "Get the main article content and title"
-)
-
-print(result["data"])
-```
-
-### CLI Usage
-
-```bash
-# Extract article content
-python extract.py "https://example.com" "Get the main article content"
-
-# Extract with custom format
-python extract.py "https://example.com" "Get product prices" --format json
-
-# Save to file
-python extract.py "https://example.com" "Find contact info" --output-file result.json
-```
-
-## 📖 Examples
-
-### 1. Extract Article Content
-
-```python
-from intelligent_extractor import extract
-
-result = await extract(
-    "https://www.bbc.com/pidgin/articles/cqle6xr4qzzo",
-    "Extract the main article content, title, and key information about the helicopter crash"
-)
-
-print(result["data"])
-# Output:
-# {
-#   "title": "Ghana Airforce helicopter crash victims...",
-#   "content": "Ghana Defence minister, Environment minister, six odas die for helicopter crash...",
-#   "word_count": 1309,
-#   "character_count": 8173
-# }
-```
-
-### 2. Extract with Custom Format
-
-```python
-result = await extract(
-    "https://books.toscrape.com",
-    "Get product information",
-    output_format={
-        "title": "string",
-        "price": "number", 
-        "description": "string"
-    }
-)
-
-print(result["data"])
-# Output:
-# {
-#   "title": "A Light in the Attic",
-#   "price": 51.77,
-#   "description": "Book description..."
-# }
-```
-
-### 3. Extract Contact Information
-
-```python
-result = await extract(
-    "https://example.com",
-    "Find contact information and email addresses"
-)
-
-print(result["data"])
-# Output:
-# {
-#   "contact": {
-#     "email": "contact@example.com",
-#     "phone": "123-456-7890"
-#   }
-# }
-```
-
-### 4. Batch Processing
-
-```python
-from intelligent_extractor import extract_batch
-
-urls = [
-    "https://example1.com",
-    "https://example2.com",
-    "https://example3.com"
-]
-
-results = await extract_batch(
-    urls,
-    "Get the main content from each page"
-)
-
-for i, result in enumerate(results):
-    print(f"URL {i+1}: {'✅' if result['success'] else '❌'}")
-```
-
-### 5. Synchronous Usage
-
-```python
-from intelligent_extractor import extract_sync
-
-result = extract_sync(
-    "https://example.com",
-    "Get the main article content"
-)
-
-print(result["data"])
-```
-
-## 🎯 Advanced Usage
-
-### Custom Output Formats
-
-```python
-# Define your own structure
-result = await extract(
-    "https://example.com",
-    "Extract victim information from the crash report",
-    output_format={
-        "victims": "list",
-        "total_deaths": "number", 
-        "crash_location": "string",
-        "crash_date": "string"
-    }
-)
-```
-
-### Include Raw HTML
-
-```python
-result = await extract(
-    "https://example.com",
-    "Get the main content",
-    include_raw_html=True
-)
-
-# Access raw HTML
-html_content = result["raw_html"]
-```
-
-### With API Key (AI Features)
-
-```python
-result = await extract(
-    "https://example.com",
-    "Extract the main article content and summarize it",
-    api_key="your_openai_api_key"
-)
-```
-
-## 🔧 Configuration
-
-### Environment Variables
-
-Create a `.env` file:
-
-```env
-# AI Configuration
-OPENAI_API_KEY=your_openai_api_key_here
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-
-# Browser Configuration  
-INTELLIGENT_EXTRACTOR_BROWSER_TYPE=chromium
-INTELLIGENT_EXTRACTOR_HEADLESS=true
-
-# Performance Configuration
-INTELLIGENT_EXTRACTOR_MAX_WORKERS=10
-INTELLIGENT_EXTRACTOR_TIMEOUT=30
-```
-
-## 📊 Output Format
-
-The extractor returns a structured response:
-
-```python
-{
-    "success": True,
-    "url": "https://example.com",
-    "prompt": "Get the main content",
-    "data": {
-        "title": "Page Title",
-        "content": "Extracted content...",
-        "author": "Author Name",
-        # ... other extracted data
-    },
-    "timestamp": "2025-08-06T19:36:31.499935",
-    "extraction_method": "ai_heuristic"
-}
-```
-
-## 🎯 Supported Prompts
-
-The extractor understands various types of requests:
-
-- **Content Extraction**: "Get the main article content"
-- **Product Information**: "Extract product titles and prices"
-- **Contact Information**: "Find email addresses and phone numbers"
-- **Structured Data**: "Get the table data with columns"
-- **Metadata**: "Extract the title, author, and publish date"
-- **Custom Queries**: "Find all mentions of specific keywords"
-
-## 🚀 Performance
-
-- **Speed**: ~2-3 seconds per URL
-- **Memory**: Minimal memory usage
-- **Concurrency**: Supports batch processing
-- **Reliability**: Handles various content types
-
-## 🔧 Development
-
-### Project Structure
-
-```
-intelligent-web-extractor/
-├── src/
-│   └── intelligent_web_extractor/
-│       ├── core/           # Core extraction logic
-│       ├── models/         # Data models
-│       ├── strategies/     # Extraction strategies
-│       └── utils/          # Utility functions
-├── intelligent_extractor.py    # Simple interface
-├── extract.py              # CLI interface
-├── simple_extractor.py     # Core extractor class
-└── requirements-windows.txt
-```
-
-### Adding New Features
-
-1. **New Extraction Strategy**: Add to `src/intelligent_web_extractor/strategies/`
-2. **New Output Format**: Modify `simple_extractor.py`
-3. **New CLI Options**: Update `extract.py`
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## 📄 License
-
-MIT License - see LICENSE file for details
-
-## 🆘 Support
-
-- **Issues**: Create an issue on GitHub
-- **Documentation**: Check the examples above
-- **Questions**: Open a discussion
+- Multiple AI providers: Ollama, OpenAI, Anthropic, Gemini
+- Hidden content handling (iframes) is enabled globally
+- Adaptive mode performs interactive discovery (scroll/click) and AI reasoning
+- Prompt → structured data using AI schema formatting
 
 ---
 
-**Made with ❤️ for intelligent web extraction** 
+## Quick Start
+
+### Python API
+```python
+from intelligent_extractor import extract
+
+# Minimal example
+result = await extract(
+  url="https://example.com",
+  prompt="Extract the main article title and content",
+  output_format={"title": "string", "content": "string"},
+  mode="adaptive",      # semantic | structured | hybrid | adaptive
+  timeout=60,
+  max_workers=5,
+)
+# `data` is a single value (dict/string/list) depending on output_format
+print(result["data"])
+```
+
+- `output_format`: schema dict → AI formats the result into this structure
+- `mode`: choose strategy; `adaptive` adds AI navigation and reasoning
+- `timeout`, `max_workers`: per‑run performance overrides
+
+### CLI
+```bash
+intelligent-extractor extract \
+  "https://example.com" \
+  --query "Extract the main article title and content" \
+  --mode adaptive \
+  --schema schema.json \
+  --timeout 60 \
+  --max-workers 5
+```
+
+`schema.json` example:
+```json
+{
+  "title": "string",
+  "content": "string",
+  "author": "string",
+  "publish_date": "string"
+}
+```
+
+---
+
+## Use Cases & Recipes
+
+### Choosing the right strategy
+- Semantic
+  - Use when: extracting narratives (articles, blogs, docs)
+  - Behavior: AI ranks text segments semantically; no interactive navigation
+- Structured
+  - Use when: parsing rigid structure (tables, lists, forms, product pages)
+  - Behavior: DOM parsing heuristics; no interactive navigation
+- Rule‑based
+  - Use when: you know exact CSS selectors and want deterministic rules
+  - Behavior: deterministic and fast; no interactive navigation
+- Hybrid
+  - Use when: mixed pages (narratives + structure) without complex navigation
+  - Behavior: combines semantic + structured; no AI reasoning navigation
+- Adaptive (recommended default)
+  - Use when: unknown, dynamic, paginated, infinite scroll, “show more”
+  - Behavior: AI reasoning + interactive discovery (scroll/click) + best‑strategy selection
+
+Notes
+- Hidden content handling (iframes, embedded HTML) is globally enabled across modes.
+- Only Adaptive performs interactive actions (scroll/click/expand) using AI guidance.
+
+Below are common scenarios with ready‑to‑run Python snippets.
+
+### 1) News / Articles (narrative content)
+Use semantic for stable pages; use adaptive if there are expandable sections or dynamic loading.
+```python
+from intelligent_extractor import extract
+
+result = await extract(
+  url="https://www.bbc.com/news",
+  prompt="Extract the article title, author, publish date, and main story",
+  output_format={
+    "title": "string",
+    "author": "string",
+    "publish_date": "string",
+    "content": "string"
+  },
+  mode="semantic"  # or "adaptive" if the page needs interactions
+)
+print(result["data"])
+```
+
+### 2) Product Pages (structured content)
+Use structured for tables/lists/attributes. Hybrid is useful for mixed narrative + specs.
+```python
+from intelligent_extractor import extract
+
+result = await extract(
+  url="https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
+  prompt="Extract product title, price, availability, rating, description",
+    output_format={
+        "title": "string",
+    "price": "string",
+    "availability": "string",
+    "rating": "string",
+        "description": "string"
+  },
+  mode="structured"  # or "hybrid"
+)
+print(result["data"])
+```
+
+### 3) Listings / Infinite Scroll / “Load more”
+Use adaptive so the system can scroll/click and aggregate.
+```python
+from intelligent_extractor import extract
+
+result = await extract(
+  url="https://example.com/listings",
+  prompt=(
+    "Extract the top 100 items with fields: title, price, link; handle load more or infinite scroll"
+  ),
+  output_format={
+    "items": "list",
+    "total": "number"
+  },
+  mode="adaptive",
+  timeout=120
+)
+print(result["data"])
+```
+
+### 4) Tables and Forms
+Use structured to parse tables or capture form schemas.
+```python
+from intelligent_extractor import extract
+
+result = await extract(
+  url="https://example.com/table",
+  prompt="Extract all tables as rows and headers; include row_count and column_count",
+    output_format={
+    "tables": "list"
+  },
+  mode="structured"
+)
+print(result["data"]) 
+```
+
+### 5) Hidden Content (iframes)
+Iframes are merged automatically across modes. Use adaptive if content also requires clicks.
+```python
+from intelligent_extractor import extract
+
+result = await extract(
+  url="https://example.com/embedded",
+  prompt="Extract the embedded article title and body from the iframe",
+  output_format={"title": "string", "content": "string"},
+  mode="semantic"  # switch to "adaptive" if the page requires interactions
+)
+print(result["data"]) 
+```
+
+---
+
+## Providers and .env
+Use `env.example` as a catalog of server‑level settings you can copy to your `.env`. The application loads `.env` automatically.
+
+Minimal provider configuration:
+```env
+SERVICE_TO_USE=ollama  # or openai | anthropic | gemini
+
+# Ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL_NAME=llama3
+
+# OpenAI
+OPENAI_API_KEY=...
+
+# Anthropic
+ANTHROPIC_API_KEY=...
+
+# Gemini
+GEMINI_API_KEY=...
+```
+
+Also see `env.example` for server defaults (directories, logging, performance, caching, proxy, security).
+
+---
+
+## Choosing parameters
+- `mode`
+  - Start with `adaptive` for unknown/dynamic sites
+  - Use `semantic` for text‑heavy content without interactions
+  - Use `structured` for tables/lists/forms and rigid layouts
+- `output_format`
+  - Accepts: dict schema, "json", "string", [schema] for lists, "list", or "list_of_dict"
+  - Dict schema example: {"title": "string", "price": "number"}
+  - List item schema example: [{"title": "string", "price": "number"}] → returns items array
+  - "string" → returns best single string in {"content": str}
+  - "json" → returns best‑effort JSON object
+  - "list" → returns {"items": [str, ...]}
+  - "list_of_dict" → returns {"items": [{...}, ...]}
+- `timeout` and `max_workers`
+  - Per‑run performance tuning; server defaults are in `.env`/`env.example`
+
+---
+
+## Operational settings (server‑level)
+Set these in `.env` (documented in `env.example`) so operations can manage deployment defaults:
+
+- Provider selection & credentials (`SERVICE_TO_USE`, provider keys)
+- Directories (output/cache/log)
+- Logging defaults (level, console/file, performance logs)
+- Performance defaults (max workers, timeouts, rate limits)
+- Caching policy (enable, TTL, size)
+- Proxy settings (server, username/password)
+- Security defaults (SSL verify, cert path)
+- Monitoring (opt‑in metrics)
+
+Users then override per‑run knobs via CLI/API (`mode`, `schema`, `timeout`, `max_workers`, include flags).
+
+---
+
+## Best practices
+- Start with `mode="adaptive"` for unknown sites; narrow strategy if stable
+- Always specify `output_format` for predictable JSON shapes
+- Use `--timeout` and `--max-workers` to control long pages/large batches
+- Configure server‑level rate limits and caching in `.env` for throughput
+- Prefer `mode="structured"` for rigid, table‑heavy pages for speed and determinism
+
+---
+
+## Troubleshooting
+- Provider errors: confirm `SERVICE_TO_USE` and API keys in `.env`
+- Incomplete results on dynamic pages: switch to `mode="adaptive"` and increase `--timeout`
+- Schema not filled: simplify schema or use a more specific prompt
+- Frame‑only content: already merged; if still missing, use `adaptive` for interactions
+- Rate limits/timeouts: adjust server defaults (env) and/or per‑run flags
+
+---
+
+## FAQ
+- Does it support non‑login hidden content? Yes. Iframes are merged; Adaptive can scroll/click to reveal content.
+- Can I avoid AI reasoning? Yes. Use semantic/structured/rule‑based/hybrid.
+- Can I choose a provider? Yes. Set `SERVICE_TO_USE` and corresponding keys in `.env`.
+
+---
+
+## Summary
+- Prompt‑first interface with production‑grade internals
+- Quick to start with Python/CLI examples
+- Clear separation of per‑run parameters (CLI/API) and server defaults (`.env`)
+- Multiple modes for different site types; Adaptive adds AI navigation when needed
+- Robust handling of hidden content and schema‑driven outputs for consistent results 
