@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.panel import Panel
 from rich.text import Text
+from dotenv import load_dotenv
 
 from .core.extractor import AdaptiveContentExtractor
 from .models.config import ExtractorConfig
@@ -29,9 +30,9 @@ logger = ExtractorLogger(__name__)
 
 @click.group()
 @click.version_option(version="0.1.0", prog_name="intelligent-web-extractor")
-@click.option("--config", "-c", type=click.Path(exists=True), help="Configuration file path")
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
-@click.option("--debug", is_flag=True, help="Enable debug mode")
+@click.option("--config", "config", type=click.Path(exists=True), help="Configuration file path")
+@click.option("--verbose", "verbose", is_flag=True, help="Enable verbose logging")
+@click.option("--debug", "debug", is_flag=True, help="Enable debug mode")
 @click.pass_context
 def main(ctx, config, verbose, debug):
     """
@@ -40,6 +41,9 @@ def main(ctx, config, verbose, debug):
     A cutting-edge web scraping library that uses artificial intelligence
     to intelligently extract and process web content based on user queries.
     """
+    # Load environment variables from .env if present
+    load_dotenv()
+    
     # Ensure context object exists
     ctx.ensure_object(dict)
     
@@ -74,8 +78,11 @@ def main(ctx, config, verbose, debug):
 @click.option("--include-metadata", is_flag=True, default=True, help="Include metadata in output")
 @click.option("--include-raw-html", is_flag=True, help="Include raw HTML in output")
 @click.option("--screenshot", is_flag=True, help="Take screenshot of the page")
+@click.option("--schema", type=click.Path(exists=True), help="JSON file with desired output schema")
+@click.option("--timeout", type=int, help="Per-run request timeout (seconds)")
+@click.option("--max-workers", type=int, help="Per-run max workers for this job")
 @click.pass_context
-def extract(ctx, url, query, mode, output, format, include_metadata, include_raw_html, screenshot):
+def extract(ctx, url, query, mode, output, format, include_metadata, include_raw_html, screenshot, schema, timeout, max_workers):
     """
     Extract content from a single URL.
     
@@ -87,18 +94,45 @@ def extract(ctx, url, query, mode, output, format, include_metadata, include_raw
     config.extraction.strategy = mode
     config.include_metadata = include_metadata
     config.include_raw_html = include_raw_html
+
+    # Load schema if provided
+    output_schema = None
+    if schema:
+        try:
+            with open(schema, 'r', encoding='utf-8') as f:
+                output_schema = json.load(f)
+        except Exception as e:
+            console.print(f"[red]Failed to load schema: {e}")
+            sys.exit(1)
     
+    # Build per-run overrides
+    custom_config = {"performance": {}}
+    if timeout:
+        custom_config["performance"]["request_timeout"] = timeout
+    if max_workers:
+        custom_config["performance"]["max_workers"] = max_workers
+
     async def run_extraction():
         try:
             with console.status("[bold green]Initializing Intelligent Web Extractor..."):
                 extractor = AdaptiveContentExtractor(config)
                 await extractor.initialize()
+
+            # Map mode string to enum for extractor
+            from .models.extraction_result import ExtractionStrategy as _ES
+            extraction_mode_enum = None
+            try:
+                extraction_mode_enum = _ES(mode) if mode else None
+            except Exception:
+                extraction_mode_enum = None
             
             with console.status(f"[bold blue]Extracting content from {url}..."):
                 result = await extractor.extract_content(
                     url=url,
                     user_query=query,
-                    extraction_mode=mode
+                    extraction_mode=extraction_mode_enum,
+                    output_format=output_schema,
+                    custom_config=custom_config if (timeout or max_workers) else None,
                 )
             
             # Display results
