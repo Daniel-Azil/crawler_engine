@@ -17,10 +17,14 @@ from ..models.config import ExtractorConfig, AIModelType
 from ..utils.logger import ExtractorLogger
 from ..utils.browser_manager import BrowserManager
 from ..utils.ai_client import AIClient
+from ..utils.hidden_content import merge_iframe_content
+from ..utils.interaction import ai_navigation_loop, basic_scroll, click_first_expander
+from ..utils.errors import NavigationError, IframeExtractionError, PageLoadTimeout
 from ..strategies.semantic_strategy import SemanticExtractionStrategy
 from ..strategies.structured_strategy import StructuredExtractionStrategy
 from ..strategies.hybrid_strategy import HybridExtractionStrategy
 from ..strategies.rule_based_strategy import RuleBasedExtractionStrategy
+from ..strategies.adaptive_strategy import AdaptiveExtractionStrategy
 
 
 class AdaptiveContentExtractor:
@@ -40,11 +44,23 @@ class AdaptiveContentExtractor:
             config: Configuration object. If None, uses default configuration.
         """
         self.config = config or ExtractorConfig()
-        self.logger = ExtractorLogger(__name__)
+        
+        # Setup logging with configuration from env
+        logging_config = {
+            "log_level": self.config.logging.log_level,
+            "enable_console_logging": self.config.logging.enable_console_logging,
+            "enable_file_logging": self.config.logging.enable_file_logging,
+            "log_format": self.config.logging.log_format,
+            "log_directory": self.config.logging.log_directory,
+            "log_performance_metrics": self.config.logging.log_performance_metrics,
+            "log_extraction_details": self.config.logging.log_extraction_details,
+            "log_ai_interactions": self.config.logging.log_ai_interactions,
+        }
+        self.logger = ExtractorLogger(__name__, logging_config)
         
         # Initialize components
         self.browser_manager = BrowserManager(self.config.browser)
-        self.ai_client = AIClient(self.config.ai_model)
+        self.ai_client = AIClient(self.config.ai_model, logging_config)
         
         # Initialize strategies
         self.strategies = {
@@ -52,6 +68,7 @@ class AdaptiveContentExtractor:
             ExtractionStrategy.STRUCTURED: StructuredExtractionStrategy(self.config),
             ExtractionStrategy.HYBRID: HybridExtractionStrategy(self.ai_client, self.config),
             ExtractionStrategy.RULE_BASED: RuleBasedExtractionStrategy(self.config),
+            ExtractionStrategy.ADAPTIVE: AdaptiveExtractionStrategy(self.ai_client, self.config, self.browser_manager, logging_config),
         }
         
         # Performance tracking
@@ -116,7 +133,8 @@ class AdaptiveContentExtractor:
         url: str,
         user_query: Optional[str] = None,
         extraction_mode: Optional[ExtractionStrategy] = None,
-        custom_config: Optional[Dict[str, Any]] = None
+        custom_config: Optional[Dict[str, Any]] = None,
+        output_format: Optional[Any] = None,
     ) -> ExtractionResult:
         """
         Extract content from a URL using adaptive intelligence.
@@ -126,9 +144,7 @@ class AdaptiveContentExtractor:
             user_query: Optional query to guide extraction
             extraction_mode: Optional specific extraction mode
             custom_config: Optional custom configuration overrides
-            
-        Returns:
-            ExtractionResult containing the extracted content and metadata
+            output_format: Optional schema (dict) or string indicating desired output shaping
         """
         if not self._initialized:
             await self.initialize()
@@ -153,22 +169,44 @@ class AdaptiveContentExtractor:
             strategy = await self._select_strategy(url, user_query, extraction_mode)
             result.strategy_info.strategy_name = strategy.__class__.__name__
             
-            # Get page content for extraction
-            page_result = await self.browser_manager.get_page_content(url)
-            html_content = page_result.get("content", "") if page_result else ""
-            result.raw_html = html_content
+            # Fetch full HTML with hidden content handling; interactive discovery only if adaptive
+            html_content = await self._get_prepared_html(url, interactive=(extraction_mode == ExtractionStrategy.ADAPTIVE or (extraction_mode is None)))
             
             # Extract content using selected strategy
-            extraction_result = await strategy.extract(url, user_query, html_content=html_content)
+            extraction_result = await strategy.extract(url, user_query, html_content)
             
             # Update result with extraction data
             result.content = extraction_result.get("content", "")
-            result.raw_html = extraction_result.get("raw_html")
-            result.metadata = extraction_result.get("metadata", result.metadata)
+            result.raw_html = extraction_result.get("raw_html", html_content)
+            
+            # Handle metadata conversion from dict to ContentMetadata object
+            metadata_dict = extraction_result.get("metadata", {})
+            if isinstance(metadata_dict, dict) and metadata_dict:
+                # Update existing metadata object with dict values
+                for key, value in metadata_dict.items():
+                    if hasattr(result.metadata, key):
+                        setattr(result.metadata, key, value)
+            else:
+                result.metadata = extraction_result.get("metadata", result.metadata)
+            
             result.structured_data = extraction_result.get("structured_data", result.structured_data)
             result.metrics = extraction_result.get("metrics", result.metrics)
             result.success = extraction_result.get("success", True)
             result.error_message = extraction_result.get("error_message")
+            
+            # Optional AI-based output shaping - ONLY if output_format is explicitly provided and not raw
+            if output_format is not None and result.content and output_format != "raw":
+                try:
+                    formatted = await self.ai_client.format_to_schema(
+                        content=result.content,
+                        output_format=output_format,
+                        url=url,
+                        user_query=user_query,
+                    )
+                    # Store formatted content in custom_fields while keeping raw content
+                    result.custom_fields["formatted_data"] = formatted
+                except Exception as _:
+                    pass
             
             # Calculate final metrics
             result.extraction_completed = datetime.now()
@@ -284,67 +322,24 @@ class AdaptiveContentExtractor:
         extraction_mode: Optional[ExtractionStrategy]
     ) -> Any:
         """
-        Select the best extraction strategy based on content analysis.
+        Select the extraction strategy - ADAPTIVE MODE ALWAYS WINS.
         
-        Args:
-            url: The URL to extract from
-            user_query: Optional user query
-            extraction_mode: Optional specific mode
-            
-        Returns:
-            Selected extraction strategy
+        The adaptive strategy is the supreme controller that iterates until success.
+        All other strategies are just tools for the adaptive strategy to use.
         """
-        # If specific mode is requested, use it (except for ADAPTIVE which needs special handling)
-        if extraction_mode and extraction_mode in self.strategies:
-            self.logger.debug(f"Using requested strategy: {extraction_mode}")
-            return self.strategies[extraction_mode]
-        elif extraction_mode == ExtractionStrategy.ADAPTIVE:
-            self.logger.debug("Adaptive strategy requested, proceeding with AI strategy selection")
+        # If adaptive mode is requested OR no mode specified, use adaptive (it's the boss)
+        if extraction_mode == ExtractionStrategy.ADAPTIVE or extraction_mode is None:
+            self.logger.info("ADAPTIVE MODE ACTIVATED - Taking full control of extraction")
+            return self.strategies[ExtractionStrategy.ADAPTIVE]
         
-        # Analyze page content to determine best strategy
-        try:
-            # Get page content for analysis
-            page_result = await self.browser_manager.get_page_content(url)
-            page_content = page_result.get("content", "") if page_result else ""
-            
-            # Use AI to analyze content and select strategy
-            strategy_analysis = await self.ai_client.analyze_content_strategy(
-                url=url,
-                content=page_content,
-                user_query=user_query
-            )
-            
-            recommended_strategy = strategy_analysis.get("recommended_strategy", "adaptive")
-            confidence = strategy_analysis.get("confidence", 0.5)
-            
-            self.logger.debug(f"AI recommended strategy: {recommended_strategy} (confidence: {confidence:.2f})")
-            
-            # Map AI recommendation to strategy
-            strategy_mapping = {
-                "semantic": ExtractionStrategy.SEMANTIC,
-                "structured": ExtractionStrategy.STRUCTURED,
-                "hybrid": ExtractionStrategy.HYBRID,
-                "rule_based": ExtractionStrategy.RULE_BASED,
-                "adaptive": ExtractionStrategy.ADAPTIVE
-            }
-            
-            selected_strategy = strategy_mapping.get(recommended_strategy, ExtractionStrategy.HYBRID)
-            
-            # Use hybrid strategy if confidence is low (adaptive fallback)
-            if confidence < self.config.extraction.confidence_threshold:
-                self.logger.debug(f"Low confidence ({confidence:.2f}), falling back to hybrid strategy")
-                selected_strategy = ExtractionStrategy.HYBRID
-            
-            # Handle adaptive strategy by defaulting to hybrid
-            if selected_strategy == ExtractionStrategy.ADAPTIVE:
-                self.logger.debug("Adaptive strategy requested, using hybrid as implementation")
-                selected_strategy = ExtractionStrategy.HYBRID
-            
-            return self.strategies[selected_strategy]
-            
-        except Exception as e:
-            self.logger.warning(f"Strategy selection failed, using hybrid: {str(e)}")
-            return self.strategies[ExtractionStrategy.HYBRID]
+        # Only use other strategies if explicitly forced (but adaptive is still better)
+        if extraction_mode and extraction_mode in self.strategies:
+            self.logger.warning(f"Using inferior strategy: {extraction_mode} (adaptive would be better)")
+            return self.strategies[extraction_mode]
+        
+        # Default to adaptive - it's the master
+        self.logger.info("Defaulting to ADAPTIVE MODE - the superior extraction engine")
+        return self.strategies[ExtractionStrategy.ADAPTIVE]
     
     def _apply_custom_config(self, custom_config: Dict[str, Any]):
         """Apply custom configuration overrides"""
@@ -478,3 +473,20 @@ class AdaptiveContentExtractor:
             health_status["overall_healthy"] = False
         
         return health_status 
+
+    async def _get_prepared_html(self, url: str, interactive: bool) -> str:
+        """Load page and return merged HTML including hidden iframe content. Optionally perform AI-guided discovery."""
+        merged_html = ""
+        async with self.browser_manager.get_page(url) as page:
+            # Optional interactive discovery (adaptive only): AI-guided loop
+            if interactive:
+                try:
+                    await ai_navigation_loop(self.ai_client, page, user_query=None, max_steps=5)
+                except Exception as e:
+                    self.logger.warning(f"Interactive discovery failed: {e}")
+            # Gather main + iframe content (parallel iframe merge)
+            try:
+                merged_html = await merge_iframe_content(page)
+            except IframeExtractionError as e:
+                self.logger.warning(f"Iframe merge failed: {e}")
+        return merged_html or "" 
