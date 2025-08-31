@@ -17,6 +17,29 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from ..models.config import BrowserConfig, BrowserType
 
+# Optional: stealth and user agent rotation
+try:
+    from playwright_stealth import stealth_async
+    HAS_STEALTH = True
+except ImportError:
+    HAS_STEALTH = False
+
+try:
+    from fake_useragent import UserAgent
+    HAS_FAKE_UA = True
+except ImportError:
+    HAS_FAKE_UA = False
+
+# Fallback static user agent list
+STATIC_USER_AGENTS = [
+    # Chrome, Firefox, Edge, Safari, etc.
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edg/120.0.0.0 Chrome/120.0.0.0 Safari/537.36",
+]
+
 
 class BrowserManager:
     """
@@ -52,6 +75,10 @@ class BrowserManager:
         self._semaphore = asyncio.Semaphore(config.max_concurrent_pages)
         self._initialized = False
         self._closed = False
+
+        # Stealth and UA rotation config
+        self.enable_stealth = getattr(config, "enable_stealth", False)
+        self.enable_ua_rotation = getattr(config, "enable_ua_rotation", False)
     
     async def __aenter__(self):
         """Async context manager entry"""
@@ -297,17 +324,77 @@ class BrowserManager:
         return await self._browser.new_context(**context_options)
     
     async def _configure_page(self, page: Page):
-        """Configure page settings"""
-        # Set user agent
-        if self.config.user_agent:
-            await page.set_extra_http_headers({"User-Agent": self.config.user_agent})
-        
+        """Configure page settings, including stealth, user agent rotation, and advanced anti-bot JS injection if enabled."""
+        # User agent rotation
+        user_agent = self.config.user_agent
+        if self.enable_ua_rotation:
+            if HAS_FAKE_UA:
+                try:
+                    user_agent = UserAgent().random
+                except Exception:
+                    user_agent = None
+            if not user_agent:
+                import random
+                user_agent = random.choice(STATIC_USER_AGENTS)
+        if user_agent:
+            await page.set_extra_http_headers({"User-Agent": user_agent})
+        # Stealth
+        if self.enable_stealth and HAS_STEALTH:
+            await stealth_async(page)
+
+        # Advanced anti-bot JS injection (navigator patching, permissions spoof, etc.)
+        if getattr(self.config, "enable_advanced_js_evasion", True):
+            await page.add_init_script(
+                """
+                // Patch navigator.webdriver
+                Object.defineProperty(navigator, 'webdriver', {get: () => false});
+                // Patch permissions
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                  parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+                );
+                // Fake plugins and languages
+                Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
+                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+                // Patch userAgent if needed (already set in headers, but double patch)
+                Object.defineProperty(navigator, 'userAgent', {get: () => window.navigator.userAgent});
+                // Patch WebGL vendor and renderer
+                const getParameter = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                  if (parameter === 37445) { return 'Intel Inc.'; }
+                  if (parameter === 37446) { return 'Intel Iris OpenGL Engine'; }
+                  return getParameter.call(this, parameter);
+                };
+                // Patch screen properties
+                Object.defineProperty(window.screen, 'width', {get: () => 1920});
+                Object.defineProperty(window.screen, 'height', {get: () => 1080});
+                // Patch deviceMemory
+                Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+                // Patch hardwareConcurrency
+                Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
+                // Patch platform
+                Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
+                // Patch timezone
+                try {
+                  Intl.DateTimeFormat = (function(orig) {
+                    return function(...args) {
+                      const dtf = new orig(...args);
+                      dtf.resolvedOptions = function() { return { timeZone: 'America/New_York' }; };
+                      return dtf;
+                    };
+                  })(Intl.DateTimeFormat);
+                } catch (e) {}
+                """
+            )
+
         # Set viewport
         await page.set_viewport_size({
             "width": self.config.viewport_width,
             "height": self.config.viewport_height
         })
-        
+
         # Add event listeners for performance tracking
         page.on("request", self._on_request)
         page.on("response", self._on_response)
@@ -370,7 +457,7 @@ class BrowserManager:
                         keywords: document.querySelector('meta[name="keywords"]')?.content || '',
                         language: document.documentElement.lang || '',
                         characterCount: document.body?.textContent?.length || 0,
-                        wordCount: document.body?.textContent?.split(/\s+/).length || 0,
+                        wordCount: document.body?.textContent?.split(/\\s+/).length || 0,
                         linkCount: document.querySelectorAll('a').length,
                         imageCount: document.querySelectorAll('img').length,
                         scriptCount: document.querySelectorAll('script').length,
