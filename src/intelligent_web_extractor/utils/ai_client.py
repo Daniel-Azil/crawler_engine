@@ -11,11 +11,30 @@ from typing import Dict, List, Optional, Any, Union
 import logging
 import json
 from pathlib import Path
+import os
 
-import openai
-import anthropic
-from sentence_transformers import SentenceTransformer
-import numpy as np
+# Handle optional imports gracefully
+try:
+    import openai
+except ImportError:
+    openai = None
+
+try:
+    import anthropic
+except ImportError:
+    anthropic = None
+
+try:
+    from sentence_transformers import SentenceTransformer
+    import numpy as np
+except ImportError:
+    SentenceTransformer = None
+    np = None
+
+try:
+    import httpx
+except ImportError:
+    httpx = None
 
 from ..models.config import AIModelConfig, AIModelType
 
@@ -28,15 +47,22 @@ class AIClient:
     Anthropic, and local models for content analysis and strategy selection.
     """
     
-    def __init__(self, config: AIModelConfig):
+    def __init__(self, config: AIModelConfig, logging_config: Optional[Dict[str, Any]] = None):
         """
         Initialize the AI client.
         
         Args:
             config: AI model configuration settings
+            logging_config: Logging configuration settings
         """
         self.config = config
-        self.logger = logging.getLogger(__name__)
+        
+        # Setup logging with provided config or default
+        if logging_config:
+            from ..utils.logger import ExtractorLogger
+            self.logger = ExtractorLogger(__name__, logging_config)
+        else:
+            self.logger = logging.getLogger(__name__)
         
         # Model clients
         self._openai_client = None
@@ -66,34 +92,29 @@ class AIClient:
         """Initialize the AI client"""
         if self._initialized:
             return
-        
         self.logger.info("Initializing AI Client")
-        
         try:
-            # Initialize based on model type
-            if self.config.model_type == AIModelType.OPENAI:
+            # Service selection
+            service = os.getenv("SERVICE_TO_USE", "ollama").lower()
+            self._service = service
+            if service == "openai":
                 await self._initialize_openai()
-            elif self.config.model_type == AIModelType.ANTHROPIC:
+            elif service == "gemini":
+                await self._initialize_gemini()
+            elif service == "anthropic":
                 await self._initialize_anthropic()
-            elif self.config.model_type == AIModelType.LOCAL:
-                await self._initialize_local()
-            elif self.config.model_type == AIModelType.HYBRID:
-                await self._initialize_hybrid()
-            elif self.config.model_type == AIModelType.OLLAMA:
+            elif service == "ollama":
                 await self._initialize_ollama()
             else:
-                raise ValueError(f"Unsupported model type: {self.config.model_type}")
-            
+                raise ValueError(f"Unsupported SERVICE_TO_USE: {service}")
             # Initialize embedding model
             await self._initialize_embeddings()
-            
             self._initialized = True
-            self.logger.info(f"AI Client initialized with {self.config.model_type.value}")
-            
+            self.logger.info(f"AI Client initialized with service={service}")
         except Exception as e:
             self.logger.error(f"Failed to initialize AI Client: {str(e)}")
             raise
-    
+
     async def close(self):
         """Close the AI client and cleanup resources"""
         if self._closed:
@@ -110,45 +131,45 @@ class AIClient:
         self.logger.info("AI Client closed successfully")
     
     async def _initialize_openai(self):
-        """Initialize OpenAI client"""
+        """Initialize OpenAI client (placeholder-ready)."""
+        if not self.config.api_key:
+            self.config.api_key = os.getenv("OPENAI_API_KEY")
         if not self.config.api_key:
             raise ValueError("OpenAI API key is required")
-        
         self._openai_client = openai.AsyncOpenAI(
             api_key=self.config.api_key,
-            base_url=self.config.base_url
+            base_url=os.getenv("OPENAI_API_BASE", self.config.base_url),
         )
-        
-        # Test connection
         try:
-            response = await self._openai_client.chat.completions.create(
+            await self._openai_client.chat.completions.create(
                 model=self.config.model_name,
                 messages=[{"role": "user", "content": "Hello"}],
-                max_tokens=10
+                max_tokens=5,
             )
-            self.logger.debug("OpenAI connection test successful")
         except Exception as e:
             self.logger.error(f"OpenAI connection test failed: {str(e)}")
             raise
-    
+
     async def _initialize_anthropic(self):
         """Initialize Anthropic client"""
+        # Prefer explicit env for service-based selection
+        if not self.config.api_key:
+            self.config.api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not self.config.base_url:
+            self.config.base_url = os.getenv("ANTHROPIC_API_BASE", "https://api.anthropic.com")
         if not self.config.api_key:
             raise ValueError("Anthropic API key is required")
-        
         self._anthropic_client = anthropic.AsyncAnthropic(
             api_key=self.config.api_key,
-            base_url=self.config.base_url
+            base_url=self.config.base_url,
         )
-        
-        # Test connection
+        # Light connectivity check
         try:
-            response = await self._anthropic_client.messages.create(
+            await self._anthropic_client.messages.create(
                 model=self.config.model_name,
-                max_tokens=10,
-                messages=[{"role": "user", "content": "Hello"}]
+                max_tokens=5,
+                messages=[{"role": "user", "content": "Hello"}],
             )
-            self.logger.debug("Anthropic connection test successful")
         except Exception as e:
             self.logger.error(f"Anthropic connection test failed: {str(e)}")
             raise
@@ -175,41 +196,46 @@ class AIClient:
                 await self._initialize_openai()
         else:
             raise ValueError("API key is required for hybrid model type")
-    
+
+    async def _initialize_gemini(self):
+        """Initialize Gemini client (placeholder)."""
+        # Placeholder: adapt to google-generativeai SDK if added
+        api_key = os.getenv("GEMINI_API_KEY")
+        base = os.getenv("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
+        if not api_key:
+            raise ValueError("Gemini API key is required")
+        # Store minimal info; real client setup would go here
+        self._gemini = {"api_key": api_key, "base_url": base, "model": self.config.model_name}
+        self.logger.debug("Gemini placeholder initialized")
+
     async def _initialize_ollama(self):
-        """Initialize Ollama client"""
-        # Ollama doesn't require API key authentication, just endpoint access
-        self.logger.info(f"Initializing Ollama client for: {self.config.model_name}")
-        self.logger.info(f"Ollama endpoint: {self.config.ollama_endpoint}")
-        
-        # Test connection to Ollama
+        """Initialize Ollama client (placeholder via OpenAI-compatible if available)."""
+        base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        model = os.getenv("OLLAMA_MODEL_NAME", self.config.model_name)
+        # Some Ollama deployments expose an OpenAI-compatible endpoint; if not, adapt _get_ai_response
         try:
-            import aiohttp
-            
-            test_payload = {
-                "model": self.config.model_name,
-                "messages": [{"role": "user", "content": "Hello"}],
-                "stream": False
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.config.ollama_endpoint,
-                    json=test_payload,
-                    timeout=aiohttp.ClientTimeout(total=10)
-                ) as response:
-                    if response.status == 200:
-                        self.logger.debug("Ollama connection test successful")
-                    else:
-                        error_text = await response.text()
-                        raise Exception(f"Ollama connection test failed: {response.status} - {error_text}")
-                        
-        except Exception as e:
-            self.logger.error(f"Ollama initialization failed: {str(e)}")
-            raise
+            self._openai_client = openai.AsyncOpenAI(api_key="ollama", base_url=f"{base}/v1")
+            # Minimal test (may fail if no compat layer)
+            await self._openai_client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=5,
+            )
+            self.config.model_name = model
+            self.logger.debug("Ollama (OpenAI-compatible) initialized")
+        except Exception:
+            # Fallback: mark as custom and use raw HTTP if needed in _get_ai_response
+            self._openai_client = None
+            self._ollama = {"base_url": base, "model": model}
+            self.logger.debug("Ollama raw HTTP mode initialized")
     
     async def _initialize_embeddings(self):
         """Initialize embedding model"""
+        if SentenceTransformer is None:
+            self.logger.warning("SentenceTransformer not available. Embeddings disabled.")
+            self._embedding_model = None
+            return
+            
         try:
             self._embedding_model = SentenceTransformer(self.config.embedding_model)
             
@@ -219,7 +245,7 @@ class AIClient:
             
         except Exception as e:
             self.logger.error(f"Failed to initialize embedding model: {str(e)}")
-            raise
+            self._embedding_model = None
     
     async def analyze_content_strategy(
         self,
@@ -313,7 +339,7 @@ class AIClient:
                 "error": str(e)
             }
     
-    async def get_embeddings(self, texts: List[str]) -> np.ndarray:
+    async def get_embeddings(self, texts: List[str]) -> Any:
         """
         Get embeddings for a list of texts.
         
@@ -321,10 +347,14 @@ class AIClient:
             texts: List of texts to embed
             
         Returns:
-            Numpy array of embeddings
+            Numpy array of embeddings or None if not available
         """
         if not self._initialized:
             await self.initialize()
+        
+        if self._embedding_model is None:
+            self.logger.warning("Embedding model not available")
+            return None
         
         try:
             # Process in batches
@@ -337,19 +367,21 @@ class AIClient:
                 embeddings.append(batch_embeddings)
             
             # Combine all embeddings
-            all_embeddings = np.vstack(embeddings)
-            
-            return all_embeddings
+            if np is not None:
+                all_embeddings = np.vstack(embeddings)
+                return all_embeddings
+            else:
+                return embeddings
             
         except Exception as e:
             self.logger.error(f"Embedding generation failed: {str(e)}")
-            raise
+            return None
     
     async def calculate_similarity(
         self,
-        query_embedding: np.ndarray,
-        content_embeddings: np.ndarray
-    ) -> np.ndarray:
+        query_embedding: Any,
+        content_embeddings: Any
+    ) -> Any:
         """
         Calculate similarity between query and content embeddings.
         
@@ -375,74 +407,79 @@ class AIClient:
             raise
     
     async def _get_ai_response(self, prompt: str) -> str:
-        """Get response from AI model"""
+        """Get response from the selected AI service."""
         start_time = time.time()
-        
         try:
-            if self._openai_client:
+            service = getattr(self, "_service", os.getenv("SERVICE_TO_USE", "ollama").lower())
+            if service == "openai" and self._openai_client:
                 response = await self._openai_client.chat.completions.create(
                     model=self.config.model_name,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=self.config.temperature,
                     max_tokens=self.config.max_tokens,
-                    timeout=self.config.timeout
+                    timeout=self.config.timeout,
                 )
                 result = response.choices[0].message.content
-                
-            elif self._anthropic_client:
+            elif service == "gemini":
+                # Use aiohttp instead of httpx
+                import aiohttp
+                headers = {"x-goog-api-key": os.getenv("GEMINI_API_KEY", "")}
+                base = os.getenv("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
+                model = self.config.model_name or "gemini-pro"
+                url = f"{base}/models/{model}:generateContent"
+                payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                timeout = aiohttp.ClientTimeout(total=self.config.timeout)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, json=payload, headers=headers) as resp:
+                        if resp.status != 200:
+                            error_text = await resp.text()
+                            raise RuntimeError(f"Gemini API error: {resp.status} - {error_text}")
+                        data = await resp.json()
+                        candidates = data.get("candidates", [])
+                    if candidates and "content" in candidates[0]:
+                        parts = candidates[0]["content"].get("parts", [])
+                        result = "\n".join(p.get("text", "") for p in parts)
+                    else:
+                        result = json.dumps(data)
+            elif service == "anthropic" and self._anthropic_client:
                 response = await self._anthropic_client.messages.create(
                     model=self.config.model_name,
                     max_tokens=self.config.max_tokens,
                     temperature=self.config.temperature,
-                    messages=[{"role": "user", "content": prompt}]
+                    messages=[{"role": "user", "content": prompt}],
                 )
-                result = response.content[0].text
-                
-            elif self.config.model_type == AIModelType.OLLAMA:
-                # Handle Ollama requests
-                result = await self._get_ollama_response(prompt)
-                
-            else:
-                raise ValueError("No AI client available")
-            
-            # Track tokens (approximate)
+                # anthropic SDK returns content parts
+                result = response.content[0].text if getattr(response, "content", None) else str(response)
+            else:  # ollama
+                if self._openai_client:  # OpenAI-compatible mode
+                    response = await self._openai_client.chat.completions.create(
+                        model=self.config.model_name,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=self.config.temperature,
+                        max_tokens=self.config.max_tokens,
+                        timeout=self.config.timeout,
+                    )
+                    result = response.choices[0].message.content
+                else:
+                    # Raw HTTP to Ollama using aiohttp
+                    import aiohttp
+                    base = self._ollama.get("base_url")
+                    model = self._ollama.get("model")
+                    url = f"{base}/api/generate"
+                    payload = {"model": model, "prompt": prompt, "stream": False}
+                    timeout = aiohttp.ClientTimeout(total=self.config.timeout)
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.post(url, json=payload) as resp:
+                            if resp.status != 200:
+                                error_text = await resp.text()
+                                raise RuntimeError(f"Ollama API error: {resp.status} - {error_text}")
+                            data = await resp.json()
+                            result = data.get("response", "") or data.get("text", "") or json.dumps(data)
             self._total_tokens += len(prompt.split()) + len(result.split())
-            
-            response_time = time.time() - start_time
-            self.logger.debug(f"AI response received in {response_time:.2f}s")
-            
+            self.logger.debug(f"AI response received in {time.time() - start_time:.2f}s via {service}")
             return result
-            
         except Exception as e:
             self.logger.error(f"AI request failed: {str(e)}")
-            raise
-    
-    async def _get_ollama_response(self, prompt: str) -> str:
-        """Get response from Ollama model"""
-        try:
-            import aiohttp
-            
-            payload = {
-                "model": self.config.model_name,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.config.ollama_endpoint,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=self.config.timeout)
-                ) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        return result.get("message", {}).get("content", "")
-                    else:
-                        error_text = await response.text()
-                        raise Exception(f"Ollama API error {response.status}: {error_text}")
-                        
-        except Exception as e:
-            self.logger.error(f"Ollama request failed: {str(e)}")
             raise
     
     def _create_strategy_analysis_prompt(
@@ -452,13 +489,6 @@ class AIClient:
         user_query: Optional[str]
     ) -> str:
         """Create prompt for strategy analysis"""
-        # Handle None or empty content
-        if not content:
-            content = "No content available"
-        
-        # Safely truncate content
-        content_preview = content[:2000] if len(content) > 2000 else content
-        
         prompt = f"""
 Analyze the following web page content and recommend the best extraction strategy.
 
@@ -466,7 +496,7 @@ URL: {url}
 User Query: {user_query or 'General content extraction'}
 
 Content Preview (first 2000 characters):
-{content_preview}
+{content[:2000]}...
 
 Based on the content structure and user query, recommend the best extraction strategy from:
 1. semantic - For content-heavy pages with natural language
@@ -640,3 +670,181 @@ Limit to {max_chunks} chunks maximum.
         self._total_tokens = 0
         self._start_time = time.time()
         self.logger.info("AI Client statistics reset") 
+
+    async def format_to_schema(self, content: str, output_format: Any, url: Optional[str] = None, user_query: Optional[str] = None) -> Any:
+        """Format raw extracted content into the user-specified schema using AI.
+        
+        Supported output_format forms (schema-first):
+        - dict: JSON object schema. Keys map to types (e.g., string|number|list|object). Can be nested.
+        - list:
+          - Single item schema: [ { ...object schema... } ] or ["string"] → return a JSON array (pure list).
+          - Any length list of strings (e.g., ["heading1", "heading2"]) → treat as request for a list of strings.
+        - string template: Any string containing {placeholders} will be treated as a deterministic template.
+          We'll ask the LLM for a JSON object with exactly those keys, then render the template.
+        - Back-compat literals: "json" → infer a reasonable JSON object. "string" → infer relevant text.
+        
+        Returns:
+        - dict for object schemas
+        - list for array schemas
+        - str for templates (rendered text/markdown/HTML)
+        - On failure, returns raw content or a minimal fallback
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        # Local helpers for robust JSON extraction
+        import re
+        def _extract_json_obj(txt: str) -> Optional[Dict[str, Any]]:
+            try:
+                start = txt.find('{'); end = txt.rfind('}') + 1
+                if start == -1 or end <= start:
+                    # Try fenced blocks ```json ... ```
+                    fence = re.search(r"```json\s*(\{[\s\S]*?\})\s*```", txt, re.IGNORECASE)
+                    if fence:
+                        return json.loads(fence.group(1))
+                    return None
+                return json.loads(txt[start:end])
+            except Exception:
+                return None
+        
+        def _extract_json_arr(txt: str) -> Optional[List[Any]]:
+            try:
+                start = txt.find('['); end = txt.rfind(']') + 1
+                if start == -1 or end <= start:
+                    # Try to unwrap common wrappers
+                    obj = _extract_json_obj(txt)
+                    if isinstance(obj, dict):
+                        for k in ("items", "data", "results", "list"):
+                            if isinstance(obj.get(k), list):
+                                return obj.get(k)
+                    return None
+                return json.loads(txt[start:end])
+            except Exception:
+                # Try to unwrap object wrapper as last resort
+                try:
+                    obj = _extract_json_obj(txt)
+                    if isinstance(obj, dict):
+                        for k in ("items", "data", "results", "list"):
+                            if isinstance(obj.get(k), list):
+                                return obj.get(k)
+                except Exception:
+                    pass
+                return None
+        
+        try:
+            # 1) Dict schema → strict JSON object
+            if isinstance(output_format, dict):
+                schema_json = json.dumps(output_format, ensure_ascii=False)
+                prompt = (
+                    "You are a data extraction and formatting assistant. Given the page content and a target schema, "
+                    "return ONLY a JSON object that matches the schema. Fill missing fields with best-effort from the content. "
+                    "Respect types: string, number, list. Do not include any text outside the JSON.\n\n"
+                    f"URL: {url or ''}\n"
+                    f"User Query: {user_query or ''}\n\n"
+                    f"Target Schema:\n{schema_json}\n\n"
+                    "Page Content (truncated to 4000 chars):\n" + content[:4000]
+                )
+                response = await self._get_ai_response(prompt)
+                obj = _extract_json_obj(response)
+                if obj is None:
+                    raise ValueError("No JSON object found in AI response")
+                return obj
+            
+            # 2) List schema → pure list
+            if isinstance(output_format, list) and len(output_format) >= 1:
+                # Determine item schema intent
+                single = (len(output_format) == 1)
+                item_schema = output_format[0]
+                if single and isinstance(item_schema, dict):
+                    # List of objects with schema
+                    schema_json = json.dumps(item_schema, ensure_ascii=False)
+                    prompt = (
+                        "Extract a homogeneous list of items from the page according to the item schema below. "
+                        "Return ONLY a JSON array of objects matching the schema (no wrapper object).\n\n"
+                        f"URL: {url or ''}\n"
+                        f"User Query: {user_query or ''}\n\n"
+                        f"Item Schema:\n{schema_json}\n\n"
+                        "Page Content (truncated to 4000 chars):\n" + content[:4000]
+                    )
+                else:
+                    # Treat as request for a list of strings
+                    prompt = (
+                        "Extract a list of the most relevant items from the page as strings. "
+                        "Return ONLY a JSON array of strings (no wrapper object).\n\n"
+                        f"URL: {url or ''}\n"
+                        f"User Query: {user_query or ''}\n\n"
+                        "Page Content (truncated to 4000 chars):\n" + content[:4000]
+                    )
+                response = await self._get_ai_response(prompt)
+                arr = _extract_json_arr(response)
+                if arr is None:
+                    raise ValueError("No JSON array found in AI response")
+                return arr
+            
+            # 3) String handling
+            if isinstance(output_format, str):
+                template_str = output_format
+                # 3a) Template mode if placeholders exist
+                placeholders = re.findall(r"\{([^{}]+)\}", template_str)
+                if placeholders:
+                    # Ask LLM for exactly these keys
+                    fields_desc = json.dumps({k: "string" for k in placeholders}, ensure_ascii=False)
+                    prompt = (
+                        "Extract the minimal set of values required to render the provided template. "
+                        "Return ONLY a JSON object with exactly these keys.\n\n"
+                        f"URL: {url or ''}\n"
+                        f"User Query: {user_query or ''}\n\n"
+                        f"Required Keys Schema:\n{fields_desc}\n\n"
+                        "Page Content (truncated to 4000 chars):\n" + content[:4000]
+                    )
+                    response = await self._get_ai_response(prompt)
+                    obj = _extract_json_obj(response) or {}
+                    # Safe deterministic rendering
+                    class _SafeDict(dict):
+                        def __missing__(self, key):
+                            return ""
+                    try:
+                        rendered = template_str.format_map(_SafeDict(obj))
+                    except Exception:
+                        # As fallback, try replacing individually
+                        rendered = template_str
+                        for k in placeholders:
+                            rendered = rendered.replace("{" + k + "}", str(obj.get(k, "")))
+                    return rendered
+                
+                # 3b) Back-compat literals
+                of = template_str.strip().lower()
+                if of == "json":
+                    prompt = (
+                        "Extract the most relevant information for the user query from the page. "
+                        "Return ONLY a JSON object with reasonable keys and values inferred from the content.\n\n"
+                        f"User Query: {user_query or ''}\n\n"
+                        "Page Content (truncated to 4000 chars):\n" + content[:4000]
+                    )
+                    response = await self._get_ai_response(prompt)
+                    obj = _extract_json_obj(response)
+                    if obj is None:
+                        raise ValueError("No JSON object found in AI response")
+                    return obj
+                if of == "string":
+                    prompt = (
+                        "Extract and synthesize the most relevant text that answers the query. "
+                        "Return ONLY the text content (no JSON).\n\n"
+                        f"User Query: {user_query or ''}\n\n"
+                        "Page Content (truncated to 4000 chars):\n" + content[:4000]
+                    )
+                    text = await self._get_ai_response(prompt)
+                    return text.strip()
+            
+            # 4) Fallbacks
+            # If content looks like JSON, try to parse it to return structured data
+            obj = _extract_json_obj(content)
+            if obj is not None:
+                return obj
+            arr = _extract_json_arr(content)
+            if arr is not None:
+                return arr
+            return content
+        except Exception as e:
+            self.logger.warning(f"Schema formatting failed: {str(e)}")
+            return content  # last-resort fallback to raw content
