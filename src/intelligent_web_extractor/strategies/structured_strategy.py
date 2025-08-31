@@ -477,7 +477,10 @@ class StructuredExtractionStrategy:
     def _extract_text_content(self, soup: BeautifulSoup) -> str:
         """Extract text content from the page"""
         # Remove unwanted elements
-        for element in soup.find_all(['script', 'style', 'noscript', 'iframe', 'object', 'embed', 'applet']):
+        removable = ['script', 'style', 'noscript']
+        if not self.config.extraction.enable_hidden_content_handling:
+            removable += ['iframe', 'object', 'embed', 'applet']
+        for element in soup.find_all(removable):
             element.decompose()
         
         # Remove navigation and footer elements

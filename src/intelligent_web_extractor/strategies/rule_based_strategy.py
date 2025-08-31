@@ -192,27 +192,29 @@ class RuleBasedExtractionStrategy:
     
     def _initialize_cleaning_rules(self) -> Dict[str, List[str]]:
         """Initialize content cleaning rules"""
+        selectors = [
+            "script",
+            "style",
+            "noscript",
+            # iframe/object/embed/applet are only removed if hidden content handling is disabled
+        ]
+        if not self.config.extraction.enable_hidden_content_handling:
+            selectors.extend(["iframe", "object", "embed", "applet"])
+        selectors.extend([
+            "nav",
+            "footer",
+            "header",
+            ".advertisement",
+            ".ad",
+            ".banner",
+            ".sponsor",
+            ".promo",
+            ".sidebar",
+            ".navigation",
+            ".menu",
+        ])
         return {
-            "remove_selectors": [
-                "script",
-                "style",
-                "noscript",
-                "iframe",
-                "object",
-                "embed",
-                "applet",
-                "nav",
-                "footer",
-                "header",
-                ".advertisement",
-                ".ad",
-                ".banner",
-                ".sponsor",
-                ".promo",
-                ".sidebar",
-                ".navigation",
-                ".menu"
-            ],
+            "remove_selectors": selectors,
             "remove_classes": [
                 "ad",
                 "advertisement",
@@ -223,7 +225,7 @@ class RuleBasedExtractionStrategy:
                 "navigation",
                 "menu",
                 "footer",
-                "header"
+                "header",
             ],
             "remove_ids": [
                 "ad",
@@ -233,8 +235,8 @@ class RuleBasedExtractionStrategy:
                 "promo",
                 "sidebar",
                 "navigation",
-                "menu"
-            ]
+                "menu",
+            ],
         }
     
     async def extract(

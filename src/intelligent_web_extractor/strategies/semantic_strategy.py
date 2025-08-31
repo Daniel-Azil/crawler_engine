@@ -57,11 +57,15 @@ class SemanticExtractionStrategy:
             r'<script[^>]*>.*?</script>',
             r'<style[^>]*>.*?</style>',
             r'<noscript[^>]*>.*?</noscript>',
-            r'<iframe[^>]*>.*?</iframe>',
-            r'<object[^>]*>.*?</object>',
-            r'<embed[^>]*>.*?</embed>',
-            r'<applet[^>]*>.*?</applet>',
         ]
+        # Conditionally remove heavy embeds only if hidden content is disabled
+        if not self.config.extraction.enable_hidden_content_handling:
+            self._remove_patterns.extend([
+                r'<iframe[^>]*>.*?</iframe>',
+                r'<object[^>]*>.*?</object>',
+                r'<embed[^>]*>.*?</embed>',
+                r'<applet[^>]*>.*?</applet>',
+            ])
         
         self._initialized = False
     
@@ -202,7 +206,10 @@ class SemanticExtractionStrategy:
     def _extract_text_content(self, soup: BeautifulSoup) -> str:
         """Extract text content from BeautifulSoup object"""
         # Remove unwanted elements
-        for element in soup.find_all(['script', 'style', 'noscript', 'iframe', 'object', 'embed', 'applet']):
+        removable = ['script', 'style', 'noscript']
+        if not self.config.extraction.enable_hidden_content_handling:
+            removable += ['iframe', 'object', 'embed', 'applet']
+        for element in soup.find_all(removable):
             element.decompose()
         
         # Remove navigation and footer elements
