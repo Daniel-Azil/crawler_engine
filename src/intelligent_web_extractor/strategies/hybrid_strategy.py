@@ -22,11 +22,8 @@ from .structured_strategy import StructuredExtractionStrategy
 
 class HybridExtractionStrategy:
     """
-    Hybrid content extraction strategy that combines semantic and
-    structured approaches for optimal results.
-    
-    This strategy analyzes the page content and intelligently combines
-    both semantic understanding and structured data extraction.
+    Hybrid strategy combines semantic and structured parsing for mixed pages.
+    Note: Advanced AI reasoning and interactive navigation are NOT performed here; these are handled by Adaptive mode.
     """
     
     def __init__(self, ai_client: AIClient, config: ExtractorConfig):
