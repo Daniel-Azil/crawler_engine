@@ -52,6 +52,9 @@ class ExtractorLogger:
         log_level = self.config.get("log_level", "INFO")
         self.logger.setLevel(getattr(logging, log_level.upper()))
         
+        # Clear any existing handlers
+        self.logger.handlers.clear()
+        
         # Create formatter
         formatter = logging.Formatter(
             fmt=self.config.get("log_format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
@@ -63,6 +66,11 @@ class ExtractorLogger:
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setFormatter(formatter)
             self.logger.addHandler(console_handler)
+        else:
+            # If console logging is disabled, add a null handler to prevent messages
+            # from going to the root logger
+            null_handler = logging.NullHandler()
+            self.logger.addHandler(null_handler)
         
         # File handler
         if self.config.get("enable_file_logging", False):
