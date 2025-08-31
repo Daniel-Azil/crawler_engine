@@ -17,7 +17,6 @@ class AIModelType(str, Enum):
     ANTHROPIC = "anthropic"
     LOCAL = "local"
     HYBRID = "hybrid"
-    OLLAMA = "ollama"
 
 
 class ExtractionStrategy(str, Enum):
@@ -58,30 +57,16 @@ class AIModelConfig:
     local_model_path: Optional[str] = None
     device: str = "auto"  # auto, cpu, cuda, mps
     
-    # Ollama settings
-    ollama_base_url: Optional[str] = None
-    ollama_endpoint: Optional[str] = None
-    
     def __post_init__(self):
         """Post-initialization validation"""
         if self.api_key is None:
-            if self.model_type == AIModelType.OLLAMA:
-                self.api_key = "ollama_local"  # Placeholder for local ollama
-            else:
-                self.api_key = os.getenv("INTELLIGENT_EXTRACTOR_API_KEY")
+            self.api_key = os.getenv("INTELLIGENT_EXTRACTOR_API_KEY")
         
         if self.base_url is None:
             if self.model_type == AIModelType.OPENAI:
                 self.base_url = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
             elif self.model_type == AIModelType.ANTHROPIC:
                 self.base_url = os.getenv("ANTHROPIC_API_BASE", "https://api.anthropic.com")
-            elif self.model_type == AIModelType.OLLAMA:
-                self.base_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
-                
-        # Set Ollama-specific configurations
-        if self.model_type == AIModelType.OLLAMA:
-            self.ollama_base_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
-            self.ollama_endpoint = os.getenv("OLLAMA_API_ENDPOINT", f"{self.ollama_base_url}/api/chat")
 
 
 @dataclass
@@ -107,6 +92,11 @@ class BrowserConfig:
     proxy_username: Optional[str] = None
     proxy_password: Optional[str] = None
     
+    # Stealth and user agent rotation
+    enable_stealth: bool = False
+    enable_ua_rotation: bool = False
+    # Advanced JS evasion (navigator patching, etc.)
+    enable_advanced_js_evasion: bool = True
     # Additional arguments
     browser_args: List[str] = field(default_factory=lambda: [
         "--no-sandbox",
@@ -133,6 +123,9 @@ class ExtractionConfig:
     remove_navigation: bool = True
     remove_footers: bool = True
     remove_headers: bool = False
+    
+    # NEW: Hidden content handling (global)
+    enable_hidden_content_handling: bool = True
     
     # Semantic extraction
     semantic_chunk_size: int = 1000
@@ -235,7 +228,6 @@ class ExtractorConfig:
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     ])
-    
     # Custom settings
     custom_settings: Dict[str, Any] = field(default_factory=dict)
     
@@ -267,31 +259,64 @@ class ExtractorConfig:
         
         if os.getenv("INTELLIGENT_EXTRACTOR_API_KEY"):
             config.ai_model.api_key = os.getenv("INTELLIGENT_EXTRACTOR_API_KEY")
-            
-        # Ollama-specific settings
-        if os.getenv("OLLAMA_API_BASE"):
-            config.ai_model.ollama_base_url = os.getenv("OLLAMA_API_BASE")
-            
-        if os.getenv("OLLAMA_API_ENDPOINT"):
-            config.ai_model.ollama_endpoint = os.getenv("OLLAMA_API_ENDPOINT")
+        
+        # Special Ollama configuration
+        if os.getenv("SERVICE_TO_USE") == "ollama":
+            config.ai_model.model_type = AIModelType.LOCAL
+            # Override model name if specifically set
+            if os.getenv("OLLAMA_MODEL_NAME"):
+                config.ai_model.model_name = os.getenv("OLLAMA_MODEL_NAME")
+            # Use base URL for Ollama
+            if os.getenv("OLLAMA_BASE_URL"):
+                config.ai_model.base_url = os.getenv("OLLAMA_BASE_URL")
         
         # Browser settings
         if os.getenv("INTELLIGENT_EXTRACTOR_BROWSER_TYPE"):
             config.browser.browser_type = BrowserType(os.getenv("INTELLIGENT_EXTRACTOR_BROWSER_TYPE"))
         
-        if os.getenv("INTELLIGENT_EXTRACTOR_HEADLESS"):
+        if os.getenv("INTELLIGENT_EXTRACTOR_HEADLESS") is not None:
             config.browser.headless = os.getenv("INTELLIGENT_EXTRACTOR_HEADLESS").lower() == "true"
         
+        if os.getenv("INTELLIGENT_EXTRACTOR_TIMEOUT"):
+            # Use INTELLIGENT_EXTRACTOR_TIMEOUT for browser timeout (in milliseconds)
+            browser_timeout_ms = int(os.getenv("INTELLIGENT_EXTRACTOR_TIMEOUT"))
+            config.browser.timeout = browser_timeout_ms
+        
+        # Additional browser settings
+        if os.getenv("INTELLIGENT_EXTRACTOR_VIEWPORT_WIDTH"):
+            config.browser.viewport_width = int(os.getenv("INTELLIGENT_EXTRACTOR_VIEWPORT_WIDTH"))
+        
+        if os.getenv("INTELLIGENT_EXTRACTOR_VIEWPORT_HEIGHT"):
+            config.browser.viewport_height = int(os.getenv("INTELLIGENT_EXTRACTOR_VIEWPORT_HEIGHT"))
+        
+        # Stealth and UA rotation
+        if os.getenv("INTELLIGENT_EXTRACTOR_ENABLE_STEALTH") is not None:
+            config.browser.enable_stealth = os.getenv("INTELLIGENT_EXTRACTOR_ENABLE_STEALTH").lower() == "true"
+        if os.getenv("INTELLIGENT_EXTRACTOR_ENABLE_UA_ROTATION") is not None:
+            config.browser.enable_ua_rotation = os.getenv("INTELLIGENT_EXTRACTOR_ENABLE_UA_ROTATION").lower() == "true"
+        # Advanced JS evasion
+        if os.getenv("INTELLIGENT_EXTRACTOR_ENABLE_ADVANCED_JS_EVASION") is not None:
+            config.browser.enable_advanced_js_evasion = os.getenv("INTELLIGENT_EXTRACTOR_ENABLE_ADVANCED_JS_EVASION").lower() == "true"
         # Performance settings
         if os.getenv("INTELLIGENT_EXTRACTOR_MAX_WORKERS"):
             config.performance.max_workers = int(os.getenv("INTELLIGENT_EXTRACTOR_MAX_WORKERS"))
         
-        if os.getenv("INTELLIGENT_EXTRACTOR_TIMEOUT"):
-            config.performance.request_timeout = int(os.getenv("INTELLIGENT_EXTRACTOR_TIMEOUT"))
+        if os.getenv("INTELLIGENT_EXTRACTOR_REQUEST_TIMEOUT"):
+            config.performance.request_timeout = int(os.getenv("INTELLIGENT_EXTRACTOR_REQUEST_TIMEOUT"))
         
         # Logging settings
         if os.getenv("INTELLIGENT_EXTRACTOR_LOG_LEVEL"):
             config.logging.log_level = os.getenv("INTELLIGENT_EXTRACTOR_LOG_LEVEL")
+        
+        if os.getenv("INTELLIGENT_EXTRACTOR_ENABLE_CONSOLE_LOGGING") is not None:
+            config.logging.enable_console_logging = os.getenv("INTELLIGENT_EXTRACTOR_ENABLE_CONSOLE_LOGGING").lower() == "true"
+        
+        if os.getenv("INTELLIGENT_EXTRACTOR_ENABLE_FILE_LOGGING") is not None:
+            config.logging.enable_file_logging = os.getenv("INTELLIGENT_EXTRACTOR_ENABLE_FILE_LOGGING").lower() == "true"
+        
+        # Debug mode
+        if os.getenv("INTELLIGENT_EXTRACTOR_DEBUG_MODE") is not None:
+            config.debug_mode = os.getenv("INTELLIGENT_EXTRACTOR_DEBUG_MODE").lower() == "true"
         
         return config
     
